@@ -1,0 +1,313 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BottomNav from '../components/BottomNav.astro';
+import VideoCard from '../components/VideoCard.astro';
+import discoverData from '../data/discover-data.json';
+import { parsePlayUrl, isValidApiUrl } from '../lib/config';
+import { env } from 'cloudflare:workers';
+import type { Env } from '../lib/types';
+
+// 详情页保持SSR（视频数据动态），但加Aggressive Cache
+export const prerender = false;
+
+const defaultSiteName = 'LVideos';
+let siteName = defaultSiteName;
+try {
+  const raw = (env as Env).DOMAIN_POOL || '';
+  const url = Astro.url;
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const idx = entry.indexOf('|');
+    if (idx === -1) continue;
+    const name = entry.slice(0, idx).trim();
+    const domain = entry.slice(idx + 1).trim();
+    if (domain && url.hostname === domain) {
+      siteName = name;
+      break;
+    }
+  }
+} catch {}
+
+const { source, id } = Astro.params;
+
+// ===== CDN边缘缓存 =====
+Astro.response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=21600, stale-while-revalidate=86400');
+
+const adWarning = import.meta.env.AD_WARNING || '勿信视频广告，谨防诈骗';
+
+// 资源站列表
+const sourcesList = (discoverData?.sourcesList || []).map((s: any) => ({
+  name: s.name || '',
+  key: s.key || s.name?.match(/^\d+/)?.[0] || s.name || '',
+  api: s.api || '',
+})).filter((s: any) => s.api);
+
+// ===== SSR获取详情数据 =====
+let ssrVideoData: any = null;
+let ssrMatchedSource: any = null;
+let ssrPlayGroups: any[] = [];
+let ssrRelatedVideos: any[] = [];
+
+if (source && id) {
+  const decodedSource = decodeURIComponent(source);
+  let matched = sourcesList.find((s: any) => s.key === decodedSource || s.name === decodedSource || decodeURIComponent(s.name) === decodedSource);
+  if (!matched) {
+    const numMatch = decodedSource.match(/^(\d+)/);
+    if (numMatch) {
+      matched = sourcesList.find((s: any) => {
+        const sKey = s.key || (s.name && s.name.match(/^(\d+)/) ? s.name.match(/^(\d+)/)[0] : '');
+        return sKey === numMatch[1];
+      });
+    }
+  }
+
+  if (matched && matched.api && isValidApiUrl(matched.api)) {
+    // 并行fetch详情和相关推荐
+    const separator = matched.api.includes('?') ? '&' : '?';
+    const detailUrl = `${matched.api}${separator}ac=videolist&ids=${encodeURIComponent(id)}`;
+    const relatedUrl = `${matched.api}${separator}ac=videolist&t=${encodeURIComponent(matched.type_id || '')}&pg=1&pagesize=12`;
+
+    try {
+      // 详情请求（1.5秒超时）
+      const detailPromise = fetch(detailUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json, */*',
+          'Referer': new URL(matched.api).origin + '/',
+        },
+        signal: AbortSignal.timeout(1500),
+      });
+
+      // 相关推荐请求（2秒超时，不阻塞详情渲染）
+      const relatedPromise = fetch(relatedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json, */*',
+          'Referer': new URL(matched.api).origin + '/',
+        },
+        signal: AbortSignal.timeout(2000),
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+      const detailResp = await detailPromise;
+      if (detailResp.ok) {
+        const result = await detailResp.json();
+        if (result && result.list && result.list.length) {
+          ssrVideoData = result.list[0];
+          ssrMatchedSource = matched;
+          ssrVideoData.source_name = matched.name;
+          ssrVideoData.source_key = matched.key;
+          ssrPlayGroups = parsePlayUrl(
+            ssrVideoData.vod_play_from || '',
+            ssrVideoData.vod_play_url || ''
+          );
+        }
+      }
+
+      // 获取相关推荐（不阻塞主流程）
+      const relatedResult = await relatedPromise;
+      if (relatedResult && relatedResult.list && Array.isArray(relatedResult.list)) {
+        ssrRelatedVideos = relatedResult.list
+          .filter((v: any) => v.vod_id !== id)
+          .slice(0, 8)
+          .map((v: any) => ({
+            ...v,
+            source_key: v.source_key || matched.key || source || '',
+            source_name: v.source_name || matched.name || '',
+          }));
+      }
+    } catch (e) {
+      // SSR获取失败，保持默认值
+    }
+  }
+}
+
+// ===== SEO =====
+const canonical = `${Astro.url.origin}/${encodeURIComponent(source || '')}-${id}`;
+const pageTitle = ssrVideoData?.vod_name
+  ? `${ssrVideoData.vod_name} - ${ssrVideoData.vod_name}在线观看 - ${siteName}`
+  : `视频详情 - ${siteName}`;
+const pageDesc = ssrVideoData?.vod_name
+  ? `${ssrVideoData.vod_name} ${ssrVideoData.vod_remarks || ''} - 免费在线观看高清视频。`
+  : '视频详情页面';
+const keywords = ssrVideoData?.vod_name
+  ? `${ssrVideoData.vod_name},${ssrVideoData.type_name || '视频'},${ssrVideoData.vod_actor || ''},在线观看,免费视频`
+  : '视频详情,在线观看';
+const ogImage = ssrVideoData?.vod_pic || undefined;
+const posterPreload = ogImage ? `https://i0.wp.com/${ogImage.replace(/^https?:\/\//, '')}?w=320` : '';
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+  keywords={keywords}
+  canonical={canonical}
+  ogImage={ogImage}
+  preloadImage={posterPreload}
+  preloadPages={['/']}
+>
+  <main class="max-w-screen-xl mx-auto px-2 pt-2 pb-16">
+    <!-- 面包屑导航 -->
+    <nav class="flex items-center gap-1 text-xs text-gray-500 mb-2" aria-label="面包屑导航">
+      <a href="/" class="hover:text-pink-500 transition-colors py-1">首页</a>
+      <span>/</span>
+      <span id="breadcrumb-source">
+        {ssrMatchedSource ? (
+          <a href={`/category?source=${encodeURIComponent(ssrMatchedSource.key || '')}`} class="hover:text-pink-500 transition-colors py-1">{ssrMatchedSource.name}</a>
+        ) : '加载中'}
+      </span>
+      <span>/</span>
+      <span id="breadcrumb-category">
+        {ssrVideoData?.type_name ? (
+          <a href={`/category?source=${encodeURIComponent(ssrMatchedSource?.key || '')}&cat=${encodeURIComponent(ssrVideoData.type_name)}`} class="hover:text-pink-500 transition-colors py-1">{ssrVideoData.type_name}</a>
+        ) : '加载中'}
+      </span>
+      <span>/</span>
+      <span id="breadcrumb-title" class="text-gray-600 line-clamp-1">{ssrVideoData?.vod_name || '加载中'}</span>
+    </nav>
+
+    {ssrVideoData ? (
+      <div id="detail-content">
+        <!-- 播放器区域（懒加载） -->
+        <div class="video-container rounded-lg overflow-hidden mb-3 bg-black relative" id="player-container" style="aspect-ratio: 16/9;">
+          <!-- 封面图作为占位符，点击后加载播放器 -->
+          <div id="player-poster" class="absolute inset-0 cursor-pointer" onclick="window._loadFirstEpisode && window._loadFirstEpisode()">
+            <img
+              src={posterPreload || ssrVideoData.vod_pic || ''}
+              alt={ssrVideoData.vod_name}
+              class="w-full h-full object-cover"
+              loading="eager"
+              decoding="sync"
+              fetchpriority="high"
+            />
+            <div class="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/20 transition-colors">
+              <div class="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                <svg class="w-8 h-8 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <!-- 真正的video元素，初始隐藏 -->
+          <video id="main-player" controls playsinline webkit-playsinline x5-playsinline preload="none" class="w-full h-full hidden" aria-label={ssrVideoData.vod_name}></video>
+          <div id="player-loading" class="absolute inset-0 bg-black/80 flex items-center justify-center z-10 hidden">
+            <div class="text-center">
+              <div class="text-white text-sm mb-2">正在加载播放器...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 广告提示语 -->
+        <div class="px-2 mb-3">
+          <div class="px-3 py-2 bg-yellow-50 rounded-lg text-xs text-yellow-700 text-center">{adWarning}</div>
+        </div>
+
+        <!-- 视频信息 -->
+        <div class="px-2 mb-3">
+          <h1 class="text-lg font-bold text-gray-800 mb-2">{ssrVideoData.vod_name}</h1>
+          <div class="flex flex-wrap gap-1.5 text-xs text-gray-600 mb-2">
+            {ssrVideoData.vod_remarks && <span class="px-2 py-0.5 bg-pink-50 text-pink-700 rounded">{ssrVideoData.vod_remarks}</span>}
+            {ssrVideoData.type_name && <span class="px-2 py-0.5 bg-gray-100 rounded">{ssrVideoData.type_name}</span>}
+            {ssrVideoData.vod_area && <span class="px-2 py-0.5 bg-gray-100 rounded">{ssrVideoData.vod_area}</span>}
+            {ssrVideoData.vod_year && <span class="px-2 py-0.5 bg-gray-100 rounded">{ssrVideoData.vod_year}</span>}
+          </div>
+          {ssrVideoData.vod_content && <p class="text-xs text-gray-500 line-clamp-3 mb-2">{ssrVideoData.vod_content}</p>}
+          {ssrVideoData.vod_actor && <p class="text-xs text-gray-500 mb-1">演员：{ssrVideoData.vod_actor}</p>}
+          {ssrVideoData.vod_director && <p class="text-xs text-gray-500 mb-1">导演：{ssrVideoData.vod_director}</p>}
+        </div>
+
+        <!-- 播放源切换 -->
+        {ssrPlayGroups.length > 1 && (
+          <div class="px-2 mb-3">
+            <div class="flex gap-2 overflow-x-auto no-scrollbar">
+              {ssrPlayGroups.map((group, gIdx) => (
+                <button class={`source-tab px-4 py-2 text-sm rounded-full whitespace-nowrap transition-colors min-h-[44px] ${gIdx === 0 ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600'}`} data-group-idx={gIdx}>
+                  {group.from}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <!-- 剧集列表 -->
+        {ssrPlayGroups.length > 0 && ssrPlayGroups[0].sources.length > 0 && (
+          <div class="px-2 mb-4">
+            <h2 class="text-sm font-medium text-gray-700 mb-2">选集</h2>
+            <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2" id="episode-grid">
+              {ssrPlayGroups[0].sources.map((ep, idx) => (
+                <button class={`episode-btn px-3 py-2 text-xs rounded truncate transition-colors min-h-[44px] min-w-[44px] ${idx === 0 ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-pink-50 hover:text-pink-500'}`} data-url={ep.url} data-idx={idx}>
+                  {ep.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <!-- 标签 -->
+        {ssrVideoData.vod_tag && (
+          <div class="px-2 mb-4">
+            <h2 class="text-sm font-medium text-gray-700 mb-2">标签</h2>
+            <div class="flex flex-wrap gap-2">
+              {ssrVideoData.vod_tag.split(/[,\/]/).map((t: string) => t.trim()).filter(Boolean).map((tag: string) => (
+                <a href={`/tag/${encodeURIComponent(tag)}`} class="inline-block px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors min-h-[44px] leading-[44px]">{tag}</a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <!-- 相关推荐（SSR直接渲染） -->
+        {(ssrVideoData.type_id || ssrVideoData.type_name) && (
+          <div class="px-2 mb-4">
+            <h2 class="text-sm font-medium text-gray-700 mb-2">相关推荐</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {ssrRelatedVideos.length > 0 ? (
+                ssrRelatedVideos.map((v, i) => (
+                  <VideoCard
+                    vod_id={v.vod_id}
+                    vod_name={v.vod_name}
+                    vod_pic={v.vod_pic}
+                    vod_remarks={v.vod_remarks}
+                    source_key={v.source_key}
+                    source_name={v.source_name}
+                    index={i}
+                  />
+                ))
+              ) : (
+                <div class="col-span-full text-center py-4 text-gray-500 text-sm">暂无相关推荐</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : (
+      <div id="detail-loading">
+        <div class="aspect-video bg-gray-200 rounded-lg animate-pulse mb-3"></div>
+        <div class="h-6 bg-gray-200 rounded w-2/3 mb-2 animate-pulse"></div>
+        <div class="flex gap-2 mb-2">
+          <div class="h-6 w-16 bg-gray-200 rounded-full animate-pulse"></div>
+          <div class="h-6 w-16 bg-gray-200 rounded-full animate-pulse"></div>
+        </div>
+        <div class="h-4 bg-gray-200 rounded w-full mb-1 animate-pulse"></div>
+        <div class="h-4 bg-gray-200 rounded w-3/4 animate-pulse"></div>
+      </div>
+    )}
+
+    <!-- 错误状态 -->
+    <div id="detail-error" class="hidden text-center py-20">
+      <p class="text-gray-500 mb-4">加载失败，请稍后重试</p>
+      <button onclick="window.location.reload()" class="px-4 py-2 bg-pink-500 text-white rounded-lg text-sm">刷新</button>
+    </div>
+  </main>
+
+  <BottomNav />
+
+  <!-- SSR数据注入 -->
+  <script id="detail-data" type="application/json" set:html={JSON.stringify(ssrVideoData || {})} />
+  <script id="play-groups-data" type="application/json" set:html={JSON.stringify(ssrPlayGroups)} />
+  <script id="source-data" type="application/json" set:html={JSON.stringify(ssrMatchedSource || {})} />
+  <script id="source-key-data" type="text/plain">{source || ''}</script>
+  <script id="video-id-data" type="text/plain">{id || ''}</script>
+  <script id="site-name" type="text/plain">{siteName}</script>
+
+  <!-- 核心交互脚本（轻量，立即加载） -->
+  <script src="/js/detail-core.js" defer is:inline></script>
+</Layout>

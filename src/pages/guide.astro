@@ -1,0 +1,29 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+export const prerender = true;
+
+const from = Astro.url.searchParams.get('from') || '/';
+---
+
+<Layout
+  title="请在浏览器中打开"
+  description="请在系统浏览器中打开以获得最佳体验"
+  noindex={true}
+>
+  <main class="min-h-screen flex items-center justify-center p-6">
+    <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-lg">
+      <div class="mb-6">
+        <svg class="w-20 h-20 mx-auto text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+      </div>
+      <h1 class="text-xl font-bold text-gray-800 mb-3">请在浏览器中打开</h1>
+      <p class="text-sm text-gray-600 mb-2">点击右上角菜单</p>
+      <p class="text-sm text-gray-600 mb-6">选择「在浏览器打开」获得最佳体验</p>
+      <a href={from} class="block w-full px-6 py-3 bg-pink-500 text-white rounded-lg text-sm hover:bg-pink-600 transition-colors">
+        我已在外部浏览器
+      </a>
+    </div>
+  </main>
+</Layout>

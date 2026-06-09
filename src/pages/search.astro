@@ -1,0 +1,203 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BottomNav from '../components/BottomNav.astro';
+import SearchBox from '../components/SearchBox.astro';
+import VideoCard from '../components/VideoCard.astro';
+import discoverData from '../data/discover-data.json';
+import { isValidApiUrl } from '../lib/config';
+import { env } from 'cloudflare:workers';
+import type { Env } from '../lib/types';
+
+// 搜索页保持SSR（关键词动态），但加Aggressive Cache
+export const prerender = false;
+
+const defaultSiteName = 'LVideos';
+let siteName = defaultSiteName;
+try {
+  const raw = (env as Env).DOMAIN_POOL || '';
+  const url = Astro.url;
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const idx = entry.indexOf('|');
+    if (idx === -1) continue;
+    const name = entry.slice(0, idx).trim();
+    const domain = entry.slice(idx + 1).trim();
+    if (domain && url.hostname === domain) {
+      siteName = name;
+      break;
+    }
+  }
+} catch {}
+
+// ===== CDN边缘缓存：搜索页HTML缓存5天 =====
+const CDN_CACHE_TTL = 432000; // 5天
+Astro.response.headers.set('Cache-Control', `public, max-age=60, s-maxage=${CDN_CACHE_TTL}, stale-while-revalidate=86400`);
+Astro.response.headers.set('CDN-Cache-Control', `public, max-age=${CDN_CACHE_TTL}`);
+
+// ===== 解析URL参数 =====
+const keyword = Astro.url.searchParams.get('q') || '';
+const currentPage = parseInt(Astro.url.searchParams.get('page') || '1') || 1;
+const activeSourceIdx = parseInt(Astro.url.searchParams.get('source') || '0') || 0;
+
+// ===== 获取资源站列表（从discover-data.json） =====
+const sources: { name: string; key: string; api: string }[] = (discoverData?.sourcesList || []).map((s: any) => ({
+  name: s.name || '',
+  key: s.key || s.name?.match(/^\d+/)?.[0] || s.name || '',
+  api: s.api || '',
+})).filter((s: any) => s.api);
+
+// ===== 服务端执行搜索 =====
+let videos: any[] = [];
+let totalPages = 1;
+let currentSourceIdx = 0;
+let searchError = '';
+let searchSourceName = '';
+
+if (keyword && sources.length > 0) {
+  currentSourceIdx = Math.min(activeSourceIdx, sources.length - 1);
+  const source = sources[currentSourceIdx];
+  searchSourceName = source.name;
+
+  // SSRF 防护：校验 API URL 安全性
+  if (source.api && isValidApiUrl(source.api)) {
+    try {
+      const resp = await fetch(`${source.api}${source.api.includes('?') ? '&' : '?'}ac=videolist&wd=${encodeURIComponent(keyword)}&pg=${currentPage}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json, */*',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      const data = await resp.json();
+
+      if (data?.list?.length) {
+        videos = data.list.map((v: any) => ({
+          vod_id: v.vod_id,
+          vod_name: v.vod_name,
+          vod_pic: v.vod_pic,
+          vod_remarks: v.vod_remarks || v.vod_subtitle || '',
+          source_name: source.name,
+          source_key: source.key,
+        }));
+        totalPages = parseInt(data.pagecount) || 1;
+      }
+    } catch (e) {
+      searchError = e instanceof Error ? e.message : '搜索失败';
+    }
+  } else {
+    searchError = '无效的API地址';
+  }
+}
+
+// ===== SEO =====
+const pageTitle = keyword
+  ? `${keyword} - 搜索结果 第${currentPage}页 | ${siteName}`
+  : `搜索 - ${siteName} | 免费在线视频搜索平台`;
+const pageDesc = keyword
+  ? `搜索「${keyword}」的结果，免费在线观看高清视频。第${currentPage}页。`
+  : '搜索您想看的影视资源，免费在线观看高清视频。聚合多源影视数据，快速找到想看的电影、电视剧、综艺、动漫。';
+const keywordsMeta = keyword
+  ? `${keyword},${keyword}在线观看,${keyword}免费,视频搜索`
+  : '搜索,视频搜索,影视搜索,电影搜索,电视剧搜索,综艺搜索,动漫搜索,免费观看';
+const canonical = `${Astro.url.origin}/search${keyword ? `?q=${encodeURIComponent(keyword)}&source=${currentSourceIdx}${currentPage > 1 ? `&page=${currentPage}` : ''}` : ''}`;
+
+const searchSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'SearchResultsPage',
+  name: keyword ? `${keyword} 搜索结果` : '视频搜索',
+  description: pageDesc,
+  url: canonical,
+  isPartOf: {
+    '@type': 'WebSite',
+    name: siteName,
+    url: Astro.url.origin
+  }
+};
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+  keywords={keywordsMeta}
+  canonical={canonical}
+>
+  <script type="application/ld+json" set:html={JSON.stringify(searchSchema).replace(/</g, '\\u003c')} slot="head" />
+
+  <div class="bg-white/95 backdrop-blur-sm border-b border-gray-100">
+    <div class="max-w-screen-xl mx-auto px-3 py-2">
+      <SearchBox />
+    </div>
+  </div>
+
+  <main class="max-w-screen-xl mx-auto px-2 pt-2 pb-16">
+    {keyword && (
+      <div class="px-2 py-2 text-sm text-gray-600">
+        搜索：<span class="font-medium text-gray-800">{keyword}</span>
+      </div>
+    )}
+
+    {sources.length > 1 && keyword && (
+      <div class="px-2 mb-2">
+        <div class="flex gap-2 overflow-x-auto no-scrollbar">
+          {sources.map((s, i) => (
+            <a
+              href={`/search?q=${encodeURIComponent(keyword)}&source=${i}`}
+              class={`flex-shrink-0 px-3 py-1.5 text-sm rounded-full transition-colors ${i === currentSourceIdx ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >{s.name}</a>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {keyword ? (
+      <>
+        {videos.length > 0 ? (
+          <>
+            {sources.length > 1 && (
+              <div class="px-2 py-1.5 text-xs text-gray-500">来自 {searchSourceName}</div>
+            )}
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-2 p-2">
+              {videos.map((v, i) => (
+                <VideoCard
+                  vod_id={v.vod_id}
+                  vod_name={v.vod_name}
+                  vod_pic={v.vod_pic}
+                  vod_remarks={v.vod_remarks}
+                  source_key={v.source_key}
+                  source_name={v.source_name}
+                  index={i}
+                />
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div class="flex items-center justify-center gap-2 px-2 py-4">
+                {currentPage > 1 && (
+                  <a
+                    href={`/search?q=${encodeURIComponent(keyword)}&source=${currentSourceIdx}&page=${currentPage - 1}`}
+                    class="px-3 py-1.5 text-sm bg-gray-100 text-gray-600 rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors"
+                  >上一页</a>
+                )}
+                <span class="text-xs text-gray-500">{currentPage} / {totalPages}</span>
+                {currentPage < totalPages && (
+                  <a
+                    href={`/search?q=${encodeURIComponent(keyword)}&source=${currentSourceIdx}&page=${currentPage + 1}`}
+                    class="px-3 py-1.5 text-sm bg-gray-100 text-gray-600 rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors"
+                  >下一页</a>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div class="text-center py-20 text-gray-500 text-sm">
+            {searchError ? '搜索失败，请稍后重试' : '未找到相关视频'}
+          </div>
+        )}
+      </>
+    ) : (
+      <div class="text-center py-20 text-gray-500 text-sm">请输入搜索关键词</div>
+    )}
+  </main>
+
+  <BottomNav />
+</Layout>

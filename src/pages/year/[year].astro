@@ -1,0 +1,22 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import BottomNav from '../../components/BottomNav.astro';
+
+export const prerender = true;
+
+const { year } = Astro.params;
+
+const pageTitle = `${year}年 - 影视大全 | LVideos`;
+const pageDesc = `${year}年的影视作品，免费在线观看高清视频。`;
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+>
+  <main class="max-w-screen-xl mx-auto px-4 pt-4 pb-16">
+    <h1 class="text-lg font-bold text-gray-800 mb-4">{year} 年的影视</h1>
+    <p class="text-sm text-gray-500">正在开发中...</p>
+  </main>
+  <BottomNav />
+</Layout>

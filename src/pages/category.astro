@@ -1,0 +1,299 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BottomNav from '../components/BottomNav.astro';
+import discoverData from '../data/discover-data.json';
+import { env } from 'cloudflare:workers';
+import type { Env } from '../lib/types';
+
+// ===== 静态生成：分类页骨架屏，数据客户端获取 =====
+export const prerender = true;
+
+const defaultSiteName = 'LVideos';
+let siteName = defaultSiteName;
+try {
+  const raw = (env as Env).DOMAIN_POOL || '';
+  const url = Astro.url;
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const idx = entry.indexOf('|');
+    if (idx === -1) continue;
+    const name = entry.slice(0, idx).trim();
+    const domain = entry.slice(idx + 1).trim();
+    if (domain && url.hostname === domain) {
+      siteName = name;
+      break;
+    }
+  }
+} catch {}
+
+const { sourcesList = [], sourceCategories = [] } = discoverData || {};
+
+const pageTitle = `分类 - 影视分类浏览 | ${siteName}`;
+const pageDesc = '按分类浏览海量影视资源，电影、电视剧、综艺、动漫、纪录片、短剧分类在线观看，支持多资源站切换。';
+const keywords = '影视分类,电影分类,电视剧分类,动漫分类,综艺分类,纪录片分类,短剧分类,在线观看,免费看片,高清电影,最新电视剧,热门动漫';
+const canonical = Astro.url.origin + '/category';
+
+const categorySchema = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: pageTitle,
+  description: pageDesc,
+  url: canonical,
+  isPartOf: {
+    '@type': 'WebSite',
+    name: siteName,
+    url: Astro.url.origin
+  }
+};
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+  keywords={keywords}
+  canonical={canonical}
+  preloadPages={['/discover', '/search', '/']}
+>
+  <script type="application/ld+json" set:html={JSON.stringify(categorySchema).replace(/</g, '\u003c')} slot="head" />
+
+  <main class="max-w-screen-xl mx-auto pb-16">
+    <!-- 一级导航：资源站（SSR渲染） -->
+    <div id="source-tabs" class="bg-white border-b border-gray-100">
+      <div class="flex overflow-x-auto no-scrollbar px-3 py-2 gap-2">
+        {sourcesList.length > 0 ? sourcesList.map(s => (
+          <a href={`/category?source=${encodeURIComponent(s.key)}`} class="source-tab flex-shrink-0 px-3 py-1.5 text-sm rounded-full transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200" data-key={s.key}>{s.name}</a>
+        )) : (
+          <div class="animate-pulse flex gap-2">
+            <div class="h-8 w-16 bg-gray-200 rounded-full"></div>
+            <div class="h-8 w-16 bg-gray-200 rounded-full"></div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- 二级导航：分类 -->
+    <div id="cat-tabs" class="bg-white border-b border-gray-100 hidden">
+      <div class="flex overflow-x-auto no-scrollbar px-3 py-2 gap-2"></div>
+    </div>
+
+    <!-- 加载状态 -->
+    <div id="cat-loading">
+      <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-2 p-2">
+        {Array.from({ length: 20 }).map(() => (
+          <div>
+            <div class="aspect-video bg-gray-200 rounded-lg animate-pulse"></div>
+            <div class="mt-1 h-4 bg-gray-200 rounded w-3/4 animate-pulse"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- 视频列表 -->
+    <div id="cat-videos" class="hidden"></div>
+
+    <!-- 分页 -->
+    <div id="cat-pagination" class="hidden"></div>
+
+    <!-- 空状态 -->
+    <div id="cat-empty" class="hidden text-center py-20">
+      <p class="text-gray-500 text-sm">该分类暂无视频</p>
+    </div>
+  </main>
+
+  <BottomNav />
+
+  <script id="sources-data" type="application/json" set:html={JSON.stringify(sourcesList)} />
+  <script id="categories-data" type="application/json" set:html={JSON.stringify(sourceCategories)} />
+
+  <script is:inline>
+    (function() {
+      // HTML 转义函数（防止 XSS）
+      function _e(str) {
+        if (!str) return '';
+        return str.replace(/[&<>"']/g, function(c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c] || c;
+        });
+      }
+
+      // 从SSR注入的数据获取完整sources（含api字段）
+      var sources = [];
+      var sourceCategories = [];
+      try {
+        var el1 = document.getElementById('sources-data');
+        if (el1) sources = JSON.parse(el1.textContent);
+        var el2 = document.getElementById('categories-data');
+        if (el2) sourceCategories = JSON.parse(el2.textContent);
+      } catch (e) {}
+
+      // 从URL获取参数
+      var params = new URLSearchParams(window.location.search);
+      var currentSourceKey = params.get('source') || '';
+      var currentCat = params.get('cat') || '';
+      var currentPage = parseInt(params.get('page') || '1') || 1;
+
+      // 高亮当前资源站tab（SSR已渲染）
+      var tabs = document.querySelectorAll('.source-tab');
+      tabs.forEach(function(tab) {
+        if (tab.getAttribute('data-key') === currentSourceKey) {
+          tab.className = 'source-tab flex-shrink-0 px-3 py-1.5 text-sm rounded-full transition-colors bg-pink-500 text-white';
+        }
+      });
+
+      function renderCatTabs() {
+        // 优先从SSR注入的sourceCategories获取分类
+        var cats = [];
+        var sc = sourceCategories.find(function(s) { return s.sourceKey === currentSourceKey; });
+        if (sc && sc.categories && sc.categories.length) {
+          cats = sc.categories.map(function(c) { return { name: c.name, id: c.id }; });
+        }
+        if (!cats.length) {
+          document.getElementById('cat-tabs').classList.add('hidden');
+          return;
+        }
+        var html = '<a href="/category?source=' + encodeURIComponent(currentSourceKey) + '" class="cat-btn flex-shrink-0 px-3 py-1.5 text-sm rounded-full transition-colors ' + (!currentCat ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200') + '">全部</a>';
+        cats.forEach(function(c) {
+          html += '<a href="/category?source=' + encodeURIComponent(currentSourceKey) + '&cat=' + encodeURIComponent(c.name) + '" class="cat-btn flex-shrink-0 px-3 py-1.5 text-sm rounded-full transition-colors ' + (c.name === currentCat ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200') + '">' + _e(c.name) + '</a>';
+        });
+        document.getElementById('cat-tabs').querySelector('div').innerHTML = html;
+        document.getElementById('cat-tabs').classList.remove('hidden');
+      }
+
+      function renderVideos(videos, sourceName, sourceKey) {
+        if (!videos.length) return '';
+        // 给每个视频注入 source_name（API 可能不返回）
+        var items = videos.map(function(v) {
+          v.source_name = v.source_name || sourceName;
+          v.source_key = v.source_key || sourceKey;
+          return v;
+        });
+        return window.renderVideoGrid(items, 0);
+      }
+
+      function renderPagination(page, totalPages, sourceKey, cat) {
+        if (totalPages <= 1) return '';
+        var html = '<div class="flex justify-center items-center gap-2 px-3 py-4">';
+        if (page > 1) {
+          html += '<a href="/category?source=' + encodeURIComponent(sourceKey) + (cat ? '&cat=' + encodeURIComponent(cat) : '') + '&page=' + (page - 1) + '" class="px-4 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors">上一页</a>';
+        }
+        html += '<span class="text-sm text-gray-500">第 ' + page + '/' + totalPages + ' 页</span>';
+        if (page < totalPages) {
+          html += '<a href="/category?source=' + encodeURIComponent(sourceKey) + (cat ? '&cat=' + encodeURIComponent(cat) : '') + '&page=' + (page + 1) + '" class="px-4 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors">下一页</a>';
+        }
+        html += '</div>';
+        return html;
+      }
+
+      async function loadCategory() {
+        var loading = document.getElementById('cat-loading');
+        var videosEl = document.getElementById('cat-videos');
+        var paginationEl = document.getElementById('cat-pagination');
+        var emptyEl = document.getElementById('cat-empty');
+
+        loading.classList.remove('hidden');
+        videosEl.classList.add('hidden');
+        paginationEl.classList.add('hidden');
+        emptyEl.classList.add('hidden');
+
+        try {
+          // 如果没有SSR的sources，回退到API获取
+          if (!sources.length) {
+            var cachedSources = [];
+            try {
+              var cs = localStorage.getItem('lvideos_sources_cache');
+              var ct = localStorage.getItem('lvideos_sources_cache_time');
+              if (cs && ct && (Date.now() - parseInt(ct)) < 86400000) {
+                cachedSources = JSON.parse(cs);
+              }
+            } catch (e) {}
+            if (cachedSources.length) {
+              sources = cachedSources;
+            } else {
+              var sourcesResp = await fetch('/api/sources');
+              var sourcesResult = await sourcesResp.json();
+              if (sourcesResult.success && sourcesResult.data) {
+                sources = sourcesResult.data;
+                try {
+                  localStorage.setItem('lvideos_sources_cache', JSON.stringify(sources));
+                  localStorage.setItem('lvideos_sources_cache_time', String(Date.now()));
+                } catch (e) {}
+              }
+            }
+          }
+
+          // 确定当前资源站
+          var currentSource = sources.find(function(s) { return s.key === currentSourceKey; }) || sources[0];
+          if (!currentSource || !currentSource.api) {
+            // 需要完整source数据（含api），从localStorage或API获取
+            try {
+              var cs2 = localStorage.getItem('lvideos_sources_cache');
+              if (cs2) {
+                var allSources = JSON.parse(cs2);
+                currentSource = allSources.find(function(s) { return s.key === currentSourceKey; }) || allSources[0];
+              }
+            } catch (e) {}
+          }
+          if (!currentSource || !currentSource.api) {
+            loading.innerHTML = '<div class="text-center py-20 text-gray-500 text-sm">暂无数据源</div>';
+            return;
+          }
+          currentSourceKey = currentSource.key;
+
+          // 获取视频列表
+          var apiUrl = '/api/search?api=' + encodeURIComponent(currentSource.api) + '&page=' + currentPage;
+          if (currentCat) {
+            // 从sourceCategories中找到分类的typeId
+            var sc = sourceCategories.find(function(s) { return s.sourceKey === currentSourceKey; });
+            if (sc && sc.categories) {
+              var catObj = sc.categories.find(function(c) { return c.name === currentCat; });
+              if (catObj && catObj.id) {
+                apiUrl += '&typeId=' + encodeURIComponent(catObj.id);
+              }
+            }
+          }
+
+          var videoResp = await fetch(apiUrl);
+          var videoResult = await videoResp.json();
+
+          if (!videoResult.success || !videoResult.data || !videoResult.data.list || !videoResult.data.list.length) {
+            loading.classList.add('hidden');
+            emptyEl.classList.remove('hidden');
+            return;
+          }
+
+          var videoData = videoResult.data;
+          var videos = videoData.list.map(function(v) {
+            return {
+              vod_id: v.vod_id,
+              vod_name: v.vod_name,
+              vod_pic: v.vod_pic,
+              vod_remarks: v.vod_remarks || v.vod_subtitle || '',
+              source_name: currentSource.name,
+              source_key: currentSource.key,
+            };
+          });
+
+          // 分类已从SSR注入的sourceCategories获取，无需从视频提取
+          renderCatTabs();
+
+          // 渲染视频
+          videosEl.innerHTML = renderVideos(videos, currentSource.name, currentSource.key);
+
+          // 渲染分页
+          var totalPages = parseInt(videoData.pagecount) || 1;
+          if (totalPages > 1) {
+            paginationEl.innerHTML = renderPagination(currentPage, totalPages, currentSourceKey, currentCat);
+            paginationEl.classList.remove('hidden');
+          }
+
+          loading.classList.add('hidden');
+          videosEl.classList.remove('hidden');
+        } catch (e) {
+          loading.classList.add('hidden');
+          emptyEl.classList.remove('hidden');
+        }
+      }
+
+      loadCategory();
+    })();
+  </script>
+</Layout>

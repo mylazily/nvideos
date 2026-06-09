@@ -1,0 +1,36 @@
+name = "lvideos"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "./dist"
+
+[vars]
+# 资源站配置
+VIDEO_SOURCES = "11线|https://apidanaizi.com/api.php/provide/vod/,12线|https://apilj.com/api.php/provide/vod/,13线|https://shayuapi.com/api.php/provide/vod/,14线|https://hsckzy888.com/api.php/provide/vod/from/hsckm3u8/at/json/,15线|https://apiyutu.com/api.php/provide/vod/,16线|https://155api.com/api.php/provide/vod/,17线|https://api.xjzyapi.xyz/provide/vod/,18线|https://naixxzy.com/api.php/provide/vod/,19线|https://apilsbzy1.com/api.php/provide/vod/,20线|https://api.bwzyz.com/api.php/provide/vod/at/json/,21线|https://thzy1.me/api.php/provide/vod/,22线|https://jkunzyapi.com/api.php/provide/vod/,23线|https://slapibf.com/api.php/provide/vod/,24线|https://heiliaozyapi.com/api.php/provide/vod/,25线|https://lbapi9.com/api.php/provide/vod/,26线|https://api.ddapi.cc/api.php/provide/vod/,27线|https://www.xiangjiaozyw.com/api.php/provide/vod/,28线|https://fqzy.me/api.php/provide/vod/,29线|https://aosikazy.com/api.php/provide/vod/,30线|https://api.souavzyw.net/api.php/provide/vod/,31线|https://www.xxibaozyw.com/api.php/provide/vod/,32线|https://www.jingpinx.com/api.php/provide/vod/"
+
+# 热搜词
+HOT_SEARCHES = "海角,学生,熟女,父女,兄妹,姐姐,妈妈,爸爸,女儿,人妻,老师,强奸,医生,变态,国产,主播,丝袜,无码,制服,主播,秘书,姐弟,兄妹,原创,母子,传媒,麻豆"
+
+# 站群配置（同时用于导航和SW域名故障转移）
+# 格式：逗号分隔，每个站点 "网站名称|域名"
+DOMAIN_POOL = "LVideos|lvideos.pages.dev,994555.xyz|994555.xyz,LVideos|www.994555.xyz,nixi.eu.org|www.nixi.eu.org,不迷路地址|aidizhi.pages.dev,455555.xyz不迷路|455555.xyz"
+
+# 网站元数据
+SITE_NAME = "LVideos"
+SITE_DESCRIPTION = "免费最大视频在线播放和搜索平台"
+SITE_KEYWORDS = "在线视频,免费视频,视频搜索,最大视频网站,电视剧"
+SITE_URL = "https://www.994555.xyz"
+
+# 搜索框占位文字
+SEARCH_PLACEHOLDER = "搜索视频,不迷路永久地址455555.xyz"
+
+# 广告提示语（详情页显示）
+AD_WARNING = "勿信视频广告，谨防诈骗,不迷路地址455555.xyz安装pwa不迷路"
+
+# 搜索引擎网站所有权验证
+GOOGLE_SITE_VERIFICATION = ""
+BAIDU_SITE_VERIFICATION = ""
+BING_SITE_VERIFICATION = ""
+SOGOU_SITE_VERIFICATION = ""
+
+# 访问统计脚本URL（如百度统计、Google Analytics、umami等）
+ANALYTICS_SCRIPT = ""

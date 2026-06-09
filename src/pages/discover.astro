@@ -1,0 +1,140 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BottomNav from '../components/BottomNav.astro';
+import SearchBox from '../components/SearchBox.astro';
+import discoverData from '../data/discover-data.json';
+import { env } from 'cloudflare:workers';
+import type { Env } from '../lib/types';
+
+// ===== 静态生成：发现页数据在构建时注入 =====
+export const prerender = true;
+
+const defaultSiteName = 'LVideos';
+let siteName = defaultSiteName;
+try {
+  const raw = (env as Env).DOMAIN_POOL || '';
+  const url = Astro.url;
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const idx = entry.indexOf('|');
+    if (idx === -1) continue;
+    const name = entry.slice(0, idx).trim();
+    const domain = entry.slice(idx + 1).trim();
+    if (domain && url.hostname === domain) {
+      siteName = name;
+      break;
+    }
+  }
+} catch {}
+
+const { hotSearches = [], sourceCategories = [], sourcesList = [] } = discoverData || {};
+
+const pageTitle = `发现 - 影视分类标签大全 | ${siteName}`;
+const pageDesc = '探索海量影视资源，按分类、地区、年份、标签发现精彩内容。电影、电视剧、综艺、动漫、纪录片、短剧全收录，每日更新。';
+const keywords = '影视分类,视频标签,电影推荐,电视剧分类,动漫,综艺,纪录片,短剧,热门搜索,影视发现,动作片,爱情片,科幻片,恐怖片,战争片,悬疑剧,韩剧,美剧,日剧,国产剧,2026新片,高分电影,在线观看,免费看片';
+const canonical = Astro.url.origin + '/discover';
+
+const CAT_COLORS = [
+  'bg-red-50 text-red-600 hover:bg-red-100',
+  'bg-blue-50 text-blue-600 hover:bg-blue-100',
+  'bg-yellow-50 text-yellow-600 hover:bg-yellow-100',
+  'bg-purple-50 text-purple-600 hover:bg-purple-100',
+  'bg-green-50 text-green-600 hover:bg-green-100',
+  'bg-orange-50 text-orange-600 hover:bg-orange-100',
+  'bg-pink-50 text-pink-600 hover:bg-pink-100',
+  'bg-indigo-50 text-indigo-600 hover:bg-indigo-100',
+  'bg-teal-50 text-teal-600 hover:bg-teal-100',
+  'bg-cyan-50 text-cyan-600 hover:bg-cyan-100',
+];
+const TAG_COLORS = [
+  'bg-pink-50 text-pink-600 hover:bg-pink-100',
+  'bg-blue-50 text-blue-600 hover:bg-blue-100',
+  'bg-green-50 text-green-600 hover:bg-green-100',
+  'bg-yellow-50 text-yellow-600 hover:bg-yellow-100',
+  'bg-purple-50 text-purple-600 hover:bg-purple-100',
+  'bg-red-50 text-red-600 hover:bg-red-100',
+  'bg-indigo-50 text-indigo-600 hover:bg-indigo-100',
+  'bg-teal-50 text-teal-600 hover:bg-teal-100',
+  'bg-orange-50 text-orange-600 hover:bg-orange-100',
+  'bg-cyan-50 text-cyan-600 hover:bg-cyan-100',
+];
+
+const collectionSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: '影视发现',
+  description: '探索海量影视资源，按分类、地区、年份、标签发现精彩内容',
+  url: canonical,
+  isPartOf: {
+    '@type': 'WebSite',
+    name: siteName,
+    url: Astro.url.origin
+  },
+  about: {
+    '@type': 'Thing',
+    name: '在线视频',
+    description: '免费在线视频搜索与播放平台'
+  }
+};
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+  keywords={keywords}
+  canonical={canonical}
+>
+  <script type="application/ld+json" set:html={JSON.stringify(collectionSchema).replace(/</g, '\u003c')} slot="head" />
+
+  <div class="bg-white/95 backdrop-blur-sm border-b border-gray-100">
+    <div class="max-w-screen-xl mx-auto px-3 py-2">
+      <SearchBox />
+    </div>
+  </div>
+
+  <main class="max-w-screen-xl mx-auto pb-16">
+    <!-- 热门搜索 -->
+    <section class="bg-white mt-2">
+      <div class="px-3 py-2 border-b border-gray-100">
+        <span class="text-sm font-medium text-gray-800">热门搜索</span>
+      </div>
+      <div class="flex flex-wrap gap-2 p-3">
+        {hotSearches.length > 0 ? (
+          hotSearches.map((tag, i) => (
+            <a href={`/search?q=${encodeURIComponent(tag)}`} class={`px-3 py-1.5 text-sm rounded-full transition-colors ${TAG_COLORS[i % TAG_COLORS.length]}`}>
+              {tag}
+            </a>
+          ))
+        ) : (
+          <span class="text-sm text-gray-500">暂无热门搜索</span>
+        )}
+      </div>
+    </section>
+
+    <!-- 各资源站分类（构建时预加载） -->
+    {sourceCategories.map((sc) => (
+      <section class="bg-white mt-2">
+        <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+          <span class="text-sm font-medium text-gray-800">{sc.sourceName}</span>
+          <span class="text-xs text-gray-500">{sc.error ? '加载失败' : sc.categories.length + '个分类'}</span>
+        </div>
+        {sc.error || !sc.categories.length ? (
+          <div class="text-center py-4 text-xs text-gray-500">
+            该资源站分类暂时无法加载，<a href={`/category?source=${sc.sourceKey}`} class="text-pink-500 hover:underline">直接进入资源站</a>
+          </div>
+        ) : (
+          <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-2 p-3">
+            {sc.categories.map((cat, i) => (
+              <a href={`/category?source=${sc.sourceKey}&cat=${encodeURIComponent(cat.name)}`} class={`flex flex-col items-center gap-1 px-3 py-3 rounded-xl transition-colors ${CAT_COLORS[i % CAT_COLORS.length]}`}>
+                <span class="text-sm font-medium">{cat.name}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </section>
+    ))}
+
+  </main>
+
+  <BottomNav />
+</Layout>

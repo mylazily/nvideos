@@ -1,0 +1,59 @@
+# Security headers for all pages
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  # 压缩支持
+  Accept-Encoding: gzip, br
+  # 早期提示
+  Link: </favicon.png>; rel=preload; as=image
+
+# 首页 - CDN缓存6小时
+/
+  Cache-Control: public, max-age=60, s-maxage=21600, stale-while-revalidate=86400
+  CDN-Cache-Control: public, max-age=21600
+
+# 分类页 - CDN缓存5天
+/category
+  Cache-Control: public, max-age=60, s-maxage=432000, stale-while-revalidate=86400
+  CDN-Cache-Control: public, max-age=432000
+
+# 发现页 - CDN缓存30天
+/discover
+  Cache-Control: public, max-age=60, s-maxage=2592000, stale-while-revalidate=86400
+  CDN-Cache-Control: public, max-age=2592000
+
+# 搜索页 - CDN缓存5天
+/search
+  Cache-Control: public, max-age=60, s-maxage=432000, stale-while-revalidate=86400
+  CDN-Cache-Control: public, max-age=432000
+
+# 详情页 - CDN缓存1年
+/*-*
+  Cache-Control: public, max-age=60, s-maxage=31536000, stale-while-revalidate=86400
+  CDN-Cache-Control: public, max-age=31536000
+
+# Static assets - long cache (Astro hashed filenames)
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# API responses - CDN handles via Cache API, browser short cache
+/api/*
+  Cache-Control: public, max-age=60
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, OPTIONS
+  Access-Control-Allow-Headers: *
+
+# Images from public - 1年以上
+/public/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service worker - no cache, must always fetch latest
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Manifest - short cache
+/manifest.json
+  Cache-Control: public, max-age=3600

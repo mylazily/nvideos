@@ -1,0 +1,31 @@
+---
+// App 内置浏览器引导页组件
+// 当用户在微信/QQ/抖音等 App 内打开时显示
+---
+
+<div id="browser-guide-overlay" class="fixed inset-0 z-[100] bg-black/80 hidden items-center justify-center p-6">
+  <div class="bg-white rounded-2xl p-6 max-w-sm w-full text-center">
+    <div class="mb-4">
+      <svg class="w-16 h-16 mx-auto text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+      </svg>
+    </div>
+    <h2 class="text-lg font-bold text-gray-800 mb-2">请在浏览器中打开</h2>
+    <p class="text-sm text-gray-600 mb-4">点击右上角菜单，选择「在浏览器打开」获得最佳体验</p>
+    <div class="text-xs text-gray-500">
+      <p>支持 Chrome、Safari、Edge 等浏览器</p>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  (function() {
+    var ua = navigator.userAgent.toLowerCase();
+    var isInApp = /micromessenger|\bqq\/(?!.*qqbrowser)|bytedance|douyin(?!.*newsarticle)|weibo|alipayclient|dingtalk|baiduboxapp|kuaishou/i.test(ua);
+    if (isInApp) {
+      var overlay = document.getElementById('browser-guide-overlay');
+      if (overlay) overlay.classList.remove('hidden');
+      if (overlay) overlay.classList.add('flex');
+    }
+  })();
+</script>

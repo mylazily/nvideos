@@ -1,0 +1,49 @@
+---
+interface Props {
+  vod_id: number;
+  vod_name: string;
+  vod_pic: string;
+  vod_remarks?: string;
+  source_key: string;
+  source_name?: string;
+  index?: number;
+}
+const { vod_id, vod_name, vod_pic, vod_remarks, source_key, source_name, index = 0 } = Astro.props;
+const href = `/${encodeURIComponent(source_key)}-${vod_id}`;
+
+// 图片代理：Jetpack优先，失败降级到weserv，再降级到原图
+function jetpackImg(url: string): string {
+  if (!url || !url.startsWith('http')) return url || '/favicon.png';
+  return `https://i0.wp.com/${url.replace(/^https?:\/\//, '')}?w=320`;
+}
+function weservImg(url: string): string {
+  if (!url || !url.startsWith('http')) return url || '/favicon.png';
+  return `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=320&f=webp&q=70`;
+}
+
+const imgSrc = jetpackImg(vod_pic);
+const weservSrc = weservImg(vod_pic).replace(/'/g, "\\'");
+const fallbackSrc = (vod_pic || '/favicon.png').replace(/'/g, "\\'");
+---
+
+<a href={href} class="block group">
+  <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
+    <img
+      src={imgSrc}
+      alt={vod_name}
+      width="320"
+      height="180"
+      loading={index < 4 ? 'eager' : 'lazy'}
+      decoding="async"
+      fetchpriority={index < 2 ? 'high' : 'auto'}
+      class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+      onerror={`if(!this.dataset.wv){this.dataset.wv=1;this.src='${weservSrc}'}else if(!this.dataset.fb){this.dataset.fb=1;this.src='${fallbackSrc}'}else{this.src='/favicon.png'}`}
+    />
+    {vod_remarks && (
+      <span class="absolute bottom-1 right-1 px-1.5 py-0.5 text-xs bg-black/70 text-white rounded">{vod_remarks}</span>
+    )}
+  </div>
+  <p class="mt-1 px-0.5 text-sm text-gray-600 line-clamp-2 leading-tight group-hover:text-pink-700 transition-colors">
+    {source_name && <span class="text-pink-700">[{source_name}]</span>}{vod_name}
+  </p>
+</a>

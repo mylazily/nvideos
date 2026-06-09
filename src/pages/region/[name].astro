@@ -1,0 +1,23 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import BottomNav from '../../components/BottomNav.astro';
+
+export const prerender = true;
+
+const { name } = Astro.params;
+const decodedName = decodeURIComponent(name || '');
+
+const pageTitle = `${decodedName} - 地区影视 | LVideos`;
+const pageDesc = `${decodedName}地区的影视作品，免费在线观看高清视频。`;
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+>
+  <main class="max-w-screen-xl mx-auto px-4 pt-4 pb-16">
+    <h1 class="text-lg font-bold text-gray-800 mb-4">{decodedName} 地区的影视</h1>
+    <p class="text-sm text-gray-500">正在开发中...</p>
+  </main>
+  <BottomNav />
+</Layout>

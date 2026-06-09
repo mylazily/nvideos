@@ -1,0 +1,32 @@
+---
+const placeholder = import.meta.env.SEARCH_PLACEHOLDER || '搜索视频...';
+---
+
+<div class="relative">
+  <input
+    id="search-input"
+    type="text"
+    placeholder={placeholder}
+    class="w-full h-10 pl-4 pr-10 bg-gray-100 border-0 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-pink-500 transition-all"
+    autocomplete="off"
+    enterkeyhint="search"
+  />
+</div>
+
+<script is:inline>
+  (function() {
+    var input = document.getElementById('search-input');
+
+    function doSearch(keyword) {
+      if (!keyword.trim()) return;
+      window.location.href = '/search?q=' + encodeURIComponent(keyword.trim());
+    }
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doSearch(input.value);
+      }
+    });
+  })();
+</script>

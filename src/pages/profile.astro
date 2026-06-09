@@ -1,0 +1,176 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BottomNav from '../components/BottomNav.astro';
+import navData from '../data/nav-data.json';
+import { env } from 'cloudflare:workers';
+import type { Env } from '../lib/types';
+
+// ===== 静态生成：个人中心无服务端数据，纯客户端渲染 =====
+export const prerender = true;
+
+const defaultSiteName = 'LVideos';
+let siteName = defaultSiteName;
+try {
+  const raw = (env as Env).DOMAIN_POOL || '';
+  const url = Astro.url;
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const idx = entry.indexOf('|');
+    if (idx === -1) continue;
+    const name = entry.slice(0, idx).trim();
+    const domain = entry.slice(idx + 1).trim();
+    if (domain && url.hostname === domain) {
+      siteName = name;
+      break;
+    }
+  }
+} catch {}
+
+const { sites = [] } = navData || {};
+
+const pageTitle = `个人中心 - 观看历史 | ${siteName}`;
+const pageDesc = `查看您在 ${siteName} 的观看历史记录，快速继续观看未完成的影片。免费在线视频搜索与播放平台。`;
+const keywords = '个人中心,观看历史,播放记录,免费视频,在线观看,视频播放记录';
+const canonical = Astro.url.origin + '/profile';
+
+const breadcrumb = [
+  { name: '首页', item: Astro.url.origin + '/' },
+  { name: '个人中心', item: canonical },
+];
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+  keywords={keywords}
+  canonical={canonical}
+  breadcrumb={breadcrumb}
+  noindex={true}
+>
+  <main class="max-w-screen-xl mx-auto px-4 pt-4 pb-16">
+    <!-- PWA安装提示 -->
+    <div id="pwa-install-section" class="mb-6 hidden">
+      <div class="p-4 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-600 rounded-xl text-white">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold mb-1">安装 {siteName} 应用</h2>
+            <p class="text-xs text-white/80">添加到主屏幕，像原生应用一样使用</p>
+          </div>
+          <button id="pwa-install-btn" class="px-4 py-2 bg-white text-pink-600 rounded-lg text-sm font-medium hover:bg-white/90 transition-colors flex-shrink-0">
+            安装
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 导航 -->
+    <div class="mb-8">
+      <h2 class="text-base font-medium text-gray-800 mb-4">导航</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {sites.length > 0 ? sites.map((site: any) => (
+          <a href={site.url} target="_blank" rel="noopener noreferrer" class="block p-3 bg-white border border-gray-100 rounded-lg hover:border-pink-200 hover:bg-pink-50 transition-colors text-center">
+            <div class="text-sm text-gray-800 font-medium">{site.name}</div>
+          </a>
+        )) : (
+          <div class="text-gray-500 text-sm col-span-full">暂无导航数据</div>
+        )}
+      </div>
+    </div>
+
+    <!-- 观看历史 -->
+    <div class="mb-8">
+      <h1 class="text-lg font-bold text-gray-800 mb-4">观看历史</h1>
+      <div id="history-content">
+        <div class="text-gray-500 text-sm">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 设置 -->
+    <div class="mb-8">
+      <h2 class="text-base font-medium text-gray-800 mb-4">设置</h2>
+      <div class="space-y-3">
+        <button id="clear-history" class="w-full px-4 py-3 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 transition-colors text-left">
+          清空观看历史
+        </button>
+        <div class="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-500">
+          版本 2.0.0
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <BottomNav />
+
+  <script is:inline>
+    (function() {
+      // PWA安装
+      var deferredPrompt = null;
+      var installSection = document.getElementById('pwa-install-section');
+      var installBtn = document.getElementById('pwa-install-btn');
+
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        installSection.classList.remove('hidden');
+      });
+
+      if (installBtn) {
+        installBtn.addEventListener('click', function() {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(function(choiceResult) {
+              if (choiceResult.outcome === 'accepted') {
+                installSection.classList.add('hidden');
+              }
+              deferredPrompt = null;
+            });
+          }
+        });
+      }
+
+      // 检测是否已安装
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        installSection.classList.add('hidden');
+      }
+
+      // 加载观看历史
+      var content = document.getElementById('history-content');
+      try {
+        var history = JSON.parse(localStorage.getItem('lvideos_history') || '[]');
+        if (!history.length) {
+          content.innerHTML = '<div class="text-gray-500 text-sm">暂无观看历史</div>';
+        } else {
+          // HTML 转义函数（防止 XSS）
+          function _e(str) {
+            if (!str) return '';
+            return str.replace(/[&<>"']/g, function(c) {
+              return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c] || c;
+            });
+          }
+          content.innerHTML = '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">' +
+            history.map(function(h, i) {
+              // 适配 renderVideoCard 的数据结构
+              var card = {
+                vod_id: h.vod_id,
+                vod_name: h.title,
+                vod_pic: h.vod_pic,
+                vod_remarks: h.episode_name || '',
+                source_key: h.source_key || '',
+                source_name: ''
+              };
+              return window.renderVideoCard(card, i);
+            }).join('') +
+          '</div>';
+        }
+      } catch (e) {
+        content.innerHTML = '<div class="text-gray-500 text-sm">加载失败</div>';
+      }
+
+      // 清空历史（无弹窗，直接执行）
+      document.getElementById('clear-history').addEventListener('click', function() {
+        localStorage.removeItem('lvideos_history');
+        document.getElementById('history-content').innerHTML = '<div class="text-gray-500 text-sm">观看历史已清空</div>';
+      });
+    })();
+  </script>
+</Layout>

@@ -1,0 +1,137 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BottomNav from '../components/BottomNav.astro';
+import SearchBox from '../components/SearchBox.astro';
+import homeVideos from '../data/home-videos.json';
+import homeImgManifest from '../data/home-img-manifest.json';
+import { env } from 'cloudflare:workers';
+import type { Env } from '../lib/types';
+
+// ===== 静态生成：首页数据在构建时注入 =====
+export const prerender = true;
+
+const videos = (homeVideos || []).slice(0, 12);
+
+const defaultSiteName = 'LVideos';
+let siteName = defaultSiteName;
+try {
+  const raw = (env as Env).DOMAIN_POOL || '';
+  const url = Astro.url;
+  const entries = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const idx = entry.indexOf('|');
+    if (idx === -1) continue;
+    const name = entry.slice(0, idx).trim();
+    const domain = entry.slice(idx + 1).trim();
+    if (domain && url.hostname === domain) {
+      siteName = name;
+      break;
+    }
+  }
+} catch {}
+const siteDesc = '免费在线视频搜索与播放平台';
+const siteKeywords = '在线视频,免费视频,视频搜索,电影,电视剧,综艺,动漫,纪录片,短剧';
+
+const pageTitle = `${siteName} - 免费在线视频搜索与播放平台 | 高清电影电视剧综艺动漫短剧纪录片`;
+const pageDesc = '免费在线观看高清电影、热门电视剧、综艺、动漫、短剧、纪录片。聚合多源影视资源，每日更新，支持手机在线播放。';
+const keywords = `${siteKeywords},高清电影,电视剧,综艺,动漫,免费观看,动作片,爱情片,科幻片,恐怖片,战争片,悬疑剧,韩剧,美剧,日剧,国产剧,2026新片,最新电影,在线看片,手机看视频`;
+const canonical = Astro.url.origin + '/';
+
+// 合并为单个@graph结构化数据，减少HTTP头部大小和解析开销
+const homeSchema = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'ItemList',
+      name: '热门视频推荐',
+      itemListElement: videos.slice(0, 20).map((v, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: v.vod_name,
+        url: `${Astro.url.origin}/${encodeURIComponent(v.source_key || '')}-${v.vod_id}`,
+        image: v.vod_pic || undefined,
+      }))
+    },
+    ...videos.slice(0, 8).map(v => ({
+      '@type': 'VideoObject',
+      name: v.vod_name,
+      description: `${v.vod_name} - 免费在线观看高清视频`,
+      thumbnailUrl: v.vod_pic || undefined,
+      contentUrl: `${Astro.url.origin}/${encodeURIComponent(v.source_key || '')}-${v.vod_id}`,
+      embedUrl: `${Astro.url.origin}/${encodeURIComponent(v.source_key || '')}-${v.vod_id}`,
+    }))
+  ]
+};
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDesc}
+  keywords={keywords}
+  canonical={canonical}
+  preloadPages={['/discover', '/category', '/search', '/profile']}
+>
+  <script type="application/ld+json" set:html={JSON.stringify(homeSchema).replace(/</g, '\u003c')} slot="head" />
+
+  <div class="bg-white/95 backdrop-blur-sm border-b border-gray-100">
+    <div class="max-w-screen-xl mx-auto px-3 py-2">
+      <SearchBox />
+    </div>
+  </div>
+
+  <main class="max-w-screen-xl mx-auto px-2 pt-2 pb-16">
+    {videos.length > 0 ? (
+      <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-2 p-2">
+        {videos.map((v, i) => {
+          const rawImg = (v.vod_pic && v.vod_pic.startsWith('http')) ? v.vod_pic : '';
+          // 使用构建时优化的本地 WebP 图片（已缩放320px+转WebP）
+          const img = rawImg ? (homeImgManifest?.[String(v.vod_id)] || '/favicon.png') : '/favicon.png';
+          const href = `/${encodeURIComponent(v.source_key || '')}-${v.vod_id}`;
+          return (
+            <a href={href} class="block group content-visibility-auto">
+              <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
+                <img
+                  src={img}
+                  alt={v.vod_name}
+                  width="320"
+                  height="180"
+                  loading={i < 2 ? 'eager' : 'lazy'}
+                  decoding={i < 2 ? 'sync' : 'async'}
+                  fetchpriority={i === 0 ? 'high' : 'auto'}
+                  class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  onerror={rawImg ? `if(!this.dataset.wv){this.dataset.wv=1;this.src='https://images.weserv.nl/?url=${encodeURIComponent(rawImg)}&w=320&f=webp&q=70'}else if(!this.dataset.fb){this.dataset.fb=1;this.src='${rawImg}'}else{this.src='/favicon.png'}` : `this.src='/favicon.png'`}
+                />
+                {v.vod_remarks && (
+                  <span class="absolute bottom-1 right-1 px-1.5 py-0.5 text-xs bg-black/70 text-white rounded">{v.vod_remarks}</span>
+                )}
+              </div>
+              <p class="mt-1 px-0.5 text-sm text-gray-600 line-clamp-2 leading-tight group-hover:text-pink-700 transition-colors">
+                {v.source_name && <span class="text-pink-700">[{v.source_name}]</span>}{v.vod_name}
+              </p>
+            </a>
+          );
+        })}
+      </div>
+    ) : (
+      <div class="text-center py-20">
+        <p class="text-gray-500 mb-4">暂无视频</p>
+        <button onclick="window.location.reload()" class="px-4 py-2 bg-pink-500 text-white rounded-lg text-sm">刷新</button>
+      </div>
+    )}
+  </main>
+
+  <BottomNav />
+
+  <script is:inline>
+    // 首页完全加载后，延迟0.5秒预加载HLS.js
+    // 使用 prefetch（低优先级）不影响首屏，详情页直接复用缓存
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        var link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = '/vendor/hls.light.min.js';
+        document.head.appendChild(link);
+      }, 500);
+    });
+  </script>
+</Layout>
